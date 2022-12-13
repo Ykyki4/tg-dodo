@@ -224,14 +224,19 @@ def waiting_geo(update, context):
     return 'DELIVER_CHOICE'
 
 
+def send_feedback_form(context):
+    context.bot.send_message(chat_id=context.job.context,
+                             text=dedent('''
+                             Приятного аппетита! *место для рекламы*
+                             *сообщение что делать если пицца не пришла*'''))
+
+
 def handle_deliver_choice(update, context):
     query = update.callback_query
     closest_pizzeria = context.user_data["closest_pizzeria"]
     if query.data == 'pickup':
         context.bot.send_message(chat_id=update.effective_user.id,
                                  text=f'Вот адрес пиццерии: {closest_pizzeria["address"]}. Ждём вас.')
-        context.bot.delete_message(chat_id=query.message.chat_id,
-                                   message_id=query.message.message_id)
     elif query.data == 'deliver':
         lon, lat = context.user_data['geoposition']
         add_client_entry(context.bot_data['shop_access_token'], update.effective_user.id, lon, lat)
@@ -241,8 +246,9 @@ def handle_deliver_choice(update, context):
 
         context.bot.send_message(chat_id=update.effective_user.id,
                                  text=f'Курьер прибудет в течении часа, ожидайте ваш заказ.')
-        context.bot.delete_message(chat_id=query.message.chat_id,
-                                   message_id=query.message.message_id)
+    context.bot.delete_message(chat_id=query.message.chat_id,
+                               message_id=query.message.message_id)
+    context.job_queue.run_once(send_feedback_form, 3600, context=query.message.chat_id)
 
 
 def handle_users_reply(update, context):
@@ -271,7 +277,8 @@ def handle_users_reply(update, context):
     state_handler = states_functions[user_state]
 
     next_state = state_handler(update, context)
-    db.set(chat_id, next_state)
+    if next_state:
+        db.set(chat_id, next_state)
 
 
 def error(update, context):
@@ -325,3 +332,4 @@ if __name__ == '__main__':
     dispatcher.bot_data['yandex_api_token'] = env('YANDEX_API_KEY')
 
     updater.start_polling()
+    updater.idle()
