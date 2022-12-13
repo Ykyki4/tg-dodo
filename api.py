@@ -140,3 +140,21 @@ def get_all_entries(access_token):
     response.raise_for_status()
 
     return response.json()['data']
+
+
+def add_client_entry(access_token, client_id, lon, lat):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    json_data = {
+        'data': {
+            'type': 'entry',
+            'courierid': client_id,
+            'longitude': lon,
+            'latitude': lat,
+        },
+    }
+    response = requests.post(f'https://api.moltin.com/v2/flows/clients/entries',
+                             headers=headers, json=json_data)
+    response.raise_for_status()

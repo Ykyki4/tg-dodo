@@ -1,8 +1,10 @@
 from more_itertools import chunked
 
-from geopy import distance
+from textwrap import dedent
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from api import get_cart
 
 
 def get_menu(products, chunk=0):
@@ -35,6 +37,20 @@ def fetch_coordinates(apikey, address):
     return lon, lat
 
 
-def get_distance(entry):
-    pizzeria_address = (entry.longitude, entry.latitude)
-    return distance.distance(order_address, pizzeria_address).km
+def show_cart_to_courier(update, context):
+
+    cart_response, items_response = get_cart(context.bot_data['shop_access_token'], update.effective_user.id)
+
+    cart_text = ''
+    for item in items_response:
+        cart_text += (
+            dedent(f'''
+                {item["name"]}
+                {item["description"]}
+                {item["quantity"]} пицц в корзине за {item["meta"]["display_price"]["with_tax"]["value"]["formatted"]}
+                '''))
+
+    cart_text += f'К оплате: {cart_response["meta"]["display_price"]["with_tax"]["formatted"]}'
+
+    context.bot.send_message(chat_id=context.user_data["closest_pizzeria"]['courierid'],
+                             text=cart_text,)

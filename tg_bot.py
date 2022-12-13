@@ -8,8 +8,8 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, Filters, Updater
 
 from api import get_access_token, get_products, get_product_by_id, download_photo, add_product_to_cart, get_cart, \
-    delete_from_cart, create_customer, get_all_entries
-from bot_helpers import get_menu, fetch_coordinates, get_distance
+    delete_from_cart, create_customer, get_all_entries, add_client_entry
+from bot_helpers import get_menu, fetch_coordinates, show_cart_to_courier
 
 
 _database = None
@@ -180,30 +180,69 @@ def waiting_geo(update, context):
 
     closest_pizzeria_distance = distance.distance((closest_pizzeria['longitude'], closest_pizzeria['latitude']),
                                                   context.user_data['geoposition']).km
+
+    context.user_data['closest_pizzeria'] = closest_pizzeria
+
+    deliver_pickup_keyboard = [[InlineKeyboardButton('Доставка', callback_data='deliver')],
+                               [InlineKeyboardButton('Самовывоз', callback_data='pickup')]]
+
+    deliver_pickup_markup = InlineKeyboardMarkup(deliver_pickup_keyboard)
+
+    pickup_keyboard = [[InlineKeyboardButton('Доставка', callback_data='deliver')]]
+
+    pickup_markup = InlineKeyboardMarkup(pickup_keyboard)
+
     if closest_pizzeria_distance <= 0.5:
         update.message.reply_text(
             text=dedent(f'''
             Ближайшая пиццерия всего в {int(closest_pizzeria_distance * 1000)} м. от Вас.
-            Можете забрать сами по адресу: {closest_pizzeria['address']}, или мы доставим бесплато''')
+            Можете забрать сами, или мы доставим бесплато'''),
+            reply_markup=deliver_pickup_markup
         )
     elif closest_pizzeria_distance <= 5:
         update.message.reply_text(
             text=dedent(f'''
             Ближайшая пиццерия в {closest_pizzeria_distance:.1f} км. от Вас.
-            Можете забрать сами по адресу: {closest_pizzeria['address']}, или мы доставим за дополнительную плату в 100 р.''')
+            Можете забрать сами, или мы доставим за дополнительную плату в 100 р.'''),
+            reply_markup=deliver_pickup_markup
         )
     elif closest_pizzeria_distance <= 20:
         update.message.reply_text(
             text=dedent(f'''
             Ближайшая пиццерия в {closest_pizzeria_distance:.1f} км. от Вас.
-            Можете забрать сами по адресу: {closest_pizzeria['address']}, или мы доставим за дополнительную плату в 300 р.''')
+            Можете забрать сами, или мы доставим за дополнительную плату в 300 р.'''),
+            reply_markup=deliver_pickup_markup
         )
     else:
         update.message.reply_text(
             text=dedent(f'''
             Ближайшая пиццерия в {closest_pizzeria_distance:.1f} км. от Вас.
-            Так далеко мы не доставляем, можете забрать её сами по адресу: {closest_pizzeria['address']}''')
+            Так далеко мы не доставляем, можете забрать её сами.'''),
+            reply_markup=pickup_markup
         )
+
+    return 'DELIVER_CHOICE'
+
+
+def handle_deliver_choice(update, context):
+    query = update.callback_query
+    closest_pizzeria = context.user_data["closest_pizzeria"]
+    if query.data == 'pickup':
+        context.bot.send_message(chat_id=update.effective_user.id,
+                                 text=f'Вот адрес пиццерии: {closest_pizzeria["address"]}. Ждём вас.')
+        context.bot.delete_message(chat_id=query.message.chat_id,
+                                   message_id=query.message.message_id)
+    elif query.data == 'deliver':
+        lon, lat = context.user_data['geoposition']
+        add_client_entry(context.bot_data['shop_access_token'], update.effective_user.id, lon, lat)
+
+        show_cart_to_courier(update, context)
+        context.bot.send_location(chat_id=closest_pizzeria['courierid'], longitude=lon, latitude=lat)
+
+        context.bot.send_message(chat_id=update.effective_user.id,
+                                 text=f'Курьер прибудет в течении часа, ожидайте ваш заказ.')
+        context.bot.delete_message(chat_id=query.message.chat_id,
+                                   message_id=query.message.message_id)
 
 
 def handle_users_reply(update, context):
@@ -227,6 +266,7 @@ def handle_users_reply(update, context):
         'HANDLE_DESCRIPTION': handle_description,
         'HANDLE_CART': handle_cart,
         'WAITING_GEO': waiting_geo,
+        'DELIVER_CHOICE': handle_deliver_choice,
     }
     state_handler = states_functions[user_state]
 
