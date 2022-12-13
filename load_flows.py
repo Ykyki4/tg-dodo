@@ -70,7 +70,14 @@ def create_field(access_token, name, slug, description, flow_id):
 
 
 def add_fields_to_pizzeria_flow(access_token, pizzeria_flow_id):
-    fields = ['Address', 'Alias', 'Longitude', 'Latitude']
+    fields = ['Address', 'Alias', 'Longitude', 'Latitude', 'CourierId']
+
+    for field in fields:
+        create_field(access_token, field, field, field, pizzeria_flow_id)
+
+
+def add_fields_to_clients_flow(access_token, pizzeria_flow_id):
+    fields = ['ClientId', 'Latitude', 'Longitude']
 
     for field in fields:
         create_field(access_token, field, field, field, pizzeria_flow_id)
@@ -105,7 +112,10 @@ if __name__ == '__main__':
 
     shop_access_token, _ = get_access_token(shop_client_id, shop_client_secret)
 
-    flow_response = create_flow(shop_access_token, 'Pizzeria', 'pizzeria', 'Pizzeria addresses', True)
-    add_fields_to_pizzeria_flow(shop_access_token, flow_response['data']['id'])
+    clients_response = create_flow(shop_access_token, 'Clients', 'clients', 'Client location', True)
+    add_fields_to_clients_flow(shop_access_token, clients_response['data']['id'])
+
+    pizzeria_response = create_flow(shop_access_token, 'Pizzeria', 'pizzeria', 'Pizzeria addresses', True)
+    add_fields_to_pizzeria_flow(shop_access_token, pizzeria_response['data']['id'])
 
     load_addresses_to_fields(shop_access_token)
