@@ -12,6 +12,7 @@ def get_addresses():
     with open(path, 'r', encoding='utf8') as file:
         addresses_raw = file.read()
     addresses = json.loads(addresses_raw)
+
     return addresses
 
 
@@ -75,6 +76,26 @@ def add_fields_to_pizzeria_flow(access_token, pizzeria_flow_id):
         create_field(access_token, field, field, field, pizzeria_flow_id)
 
 
+def load_addresses_to_fields(access_token):
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+    }
+    for restaurant in get_addresses():
+        json_data = {
+            'data': {
+                'type': 'entry',
+                'address': restaurant['address']['full'],
+                'alias': restaurant['alias'],
+                'longitude': restaurant['coordinates']['lon'],
+                'latitude': restaurant['coordinates']['lat'],
+            },
+        }
+        response = requests.post(f'https://api.moltin.com/v2/flows/pizzeria/entries',
+                                 headers=headers, json=json_data)
+        response.raise_for_status()
+
+
 if __name__ == '__main__':
     env = Env()
     env.read_env()
@@ -86,3 +107,5 @@ if __name__ == '__main__':
 
     flow_response = create_flow(shop_access_token, 'Pizzeria', 'pizzeria', 'Pizzeria addresses', True)
     add_fields_to_pizzeria_flow(shop_access_token, flow_response['data']['id'])
+
+    load_addresses_to_fields(shop_access_token)
