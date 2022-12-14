@@ -50,7 +50,7 @@ def show_cart_to_courier(update, context):
                 {item["quantity"]} пицц в корзине за {item["meta"]["display_price"]["with_tax"]["value"]["formatted"]}
                 '''))
 
-    cart_text += f'К оплате: {cart_response["meta"]["display_price"]["with_tax"]["formatted"]}'
+    cart_text += f'К оплате: {context.user_data["cart_price"]}р.'
 
     context.bot.send_message(chat_id=context.user_data["closest_pizzeria"]['courierid'],
                              text=cart_text,)

@@ -4,11 +4,11 @@ from textwrap import dedent
 from environs import Env
 from geopy import distance
 import redis
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, Filters, Updater
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, Filters, Updater, PreCheckoutQueryHandler
 
 from api import get_access_token, get_products, get_product_by_id, download_photo, add_product_to_cart, get_cart, \
-    delete_from_cart, create_customer, get_all_entries, add_client_entry
+    delete_from_cart, get_all_entries, add_client_entry
 from bot_helpers import get_menu, fetch_coordinates, show_cart_to_courier
 
 
@@ -132,9 +132,11 @@ def show_cart(update, context):
                                   callback_data=item["id"])]
         )
 
-    cart_text += f'К оплате: {cart_response["meta"]["display_price"]["with_tax"]["formatted"]}'
+    context.user_data['cart_price'] = cart_response["meta"]["display_price"]["with_tax"]["amount"]
 
-    keyboard.append([InlineKeyboardButton('Оплатить💳', callback_data='pay')])
+    cart_text += f'К оплате: {context.user_data["cart_price"]}р.'
+
+    keyboard.append([InlineKeyboardButton('Оформить заказ', callback_data='checkout')])
     keyboard.append([InlineKeyboardButton('Назад🔙', callback_data='menu')])
 
     markup = InlineKeyboardMarkup(keyboard)
@@ -152,7 +154,7 @@ def handle_cart(update, context):
     query = update.callback_query
     if query.data == 'menu':
         return show_menu(update, context)
-    elif query.data == 'pay':
+    elif query.data == 'checkout':
         context.bot.send_message(chat_id=update.effective_chat.id,
                                  text='Пожалуйста, пришлите ваш адрес текстом или геолокацию.')
         context.bot.delete_message(chat_id=query.message.chat_id,
@@ -174,9 +176,8 @@ def waiting_geo(update, context):
 
     entries = get_all_entries(context.bot_data['shop_access_token'])
 
-    closest_pizzeria = min(entries, key=lambda entry:
-                            distance.distance((entry['longitude'], entry['latitude']),
-                            context.user_data['geoposition']).km)
+    closest_pizzeria = min(entries, key=lambda entry: distance.distance((entry['longitude'], entry['latitude']),
+                                                                        context.user_data['geoposition']).km)
 
     closest_pizzeria_distance = distance.distance((closest_pizzeria['longitude'], closest_pizzeria['latitude']),
                                                   context.user_data['geoposition']).km
@@ -199,6 +200,7 @@ def waiting_geo(update, context):
             Можете забрать сами, или мы доставим бесплато'''),
             reply_markup=deliver_pickup_markup
         )
+        context.user_data['delivery_price'] = 0
     elif closest_pizzeria_distance <= 5:
         update.message.reply_text(
             text=dedent(f'''
@@ -206,6 +208,7 @@ def waiting_geo(update, context):
             Можете забрать сами, или мы доставим за дополнительную плату в 100 р.'''),
             reply_markup=deliver_pickup_markup
         )
+        context.user_data['delivery_price'] = 100
     elif closest_pizzeria_distance <= 20:
         update.message.reply_text(
             text=dedent(f'''
@@ -213,6 +216,7 @@ def waiting_geo(update, context):
             Можете забрать сами, или мы доставим за дополнительную плату в 300 р.'''),
             reply_markup=deliver_pickup_markup
         )
+        context.user_data['delivery_price'] = 300
     else:
         update.message.reply_text(
             text=dedent(f'''
@@ -220,20 +224,15 @@ def waiting_geo(update, context):
             Так далеко мы не доставляем, можете забрать её сами.'''),
             reply_markup=pickup_markup
         )
+        context.user_data['delivery_price'] = 0
 
     return 'DELIVER_CHOICE'
 
 
-def send_feedback_form(context):
-    context.bot.send_message(chat_id=context.job.context,
-                             text=dedent('''
-                             Приятного аппетита! *место для рекламы*
-                             *сообщение что делать если пицца не пришла*'''))
-
-
 def handle_deliver_choice(update, context):
     query = update.callback_query
-    closest_pizzeria = context.user_data["closest_pizzeria"]
+    closest_pizzeria = context.user_data['closest_pizzeria']
+
     if query.data == 'pickup':
         context.bot.send_message(chat_id=update.effective_user.id,
                                  text=f'Вот адрес пиццерии: {closest_pizzeria["address"]}. Ждём вас.')
@@ -249,6 +248,46 @@ def handle_deliver_choice(update, context):
     context.bot.delete_message(chat_id=query.message.chat_id,
                                message_id=query.message.message_id)
     context.job_queue.run_once(send_feedback_form, 3600, context=query.message.chat_id)
+
+    start_payment_invoice(update, context)
+
+
+def send_feedback_form(context):
+    context.bot.send_message(chat_id=context.job.context,
+                             text=dedent('''
+                             Приятного аппетита! *место для рекламы*
+                             *сообщение что делать если пицца не пришла*'''))
+
+
+def start_payment_invoice(update, context):
+    chat_id = update.effective_user.id
+    title = 'Оплата заказ'
+    description = 'Для завершения, оплатите ваш заказ'
+
+    payload = 'Custom-Payload'
+
+    provider_token = context.bot_data['payment_provider_token']
+
+    currency = 'RUB'
+
+    price = int(context.user_data['cart_price']) + int(context.user_data['delivery_price'])
+
+    prices = [LabeledPrice('Test', price * 100)]
+
+    context.bot.send_invoice(chat_id, title, description, payload, provider_token, currency, prices)
+
+
+def precheckout_callback(update, context):
+    query = update.pre_checkout_query
+    if query.invoice_payload != 'Custom-Payload':
+        query.answer(ok=False, error_message='Something went wrong...')
+    else:
+        query.answer(ok=True)
+
+
+def successful_payment_callback(update, context):
+    update.message.reply_text('Спасибо за заказ! Ждём вас снова!')
+    return "START"
 
 
 def handle_users_reply(update, context):
@@ -305,8 +344,6 @@ if __name__ == '__main__':
     env.read_env()
 
     tg_token = env('TG_TOKEN')
-    shop_client_id = env('SHOP_CLIENT_ID')
-    shop_client_secret = env('SHOP_CLIENT_SECRET')
 
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                         level=logging.INFO)
@@ -318,18 +355,23 @@ if __name__ == '__main__':
     dispatcher.add_handler(MessageHandler(Filters.text, handle_users_reply))
     dispatcher.add_handler(MessageHandler(Filters.location, waiting_geo))
     dispatcher.add_handler(CommandHandler('start', handle_users_reply))
+    dispatcher.add_handler(PreCheckoutQueryHandler(precheckout_callback))
+    dispatcher.add_handler(MessageHandler(Filters.successful_payment, successful_payment_callback))
 
     dispatcher.add_error_handler(error)
 
-    shop_access_token, token_expires = get_access_token(shop_client_id, shop_client_secret)
+    dispatcher.bot_data['shop_client_id'] = env('SHOP_CLIENT_ID')
+    dispatcher.bot_data['shop_client_secret'] = env('SHOP_CLIENT_SECRET')
 
-    dispatcher.bot_data['shop_client_id'] = shop_client_id
-    dispatcher.bot_data['shop_client_secret'] = shop_client_secret
+    shop_access_token, token_expires = get_access_token(dispatcher.bot_data['shop_client_id'],
+                                                        dispatcher.bot_data['shop_client_secret'])
 
     dispatcher.bot_data['shop_access_token'] = shop_access_token
     updater.job_queue.run_repeating(regenerate_shop_access_token, interval=token_expires)
 
     dispatcher.bot_data['yandex_api_token'] = env('YANDEX_API_KEY')
+
+    dispatcher.bot_data['payment_provider_token'] = env('PAYMENT_PROVIDER_TOKEN')
 
     updater.start_polling()
     updater.idle()
