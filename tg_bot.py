@@ -18,7 +18,7 @@ logger = logging.getLogger('BotLogger')
 
 def start(update, context):
     products_raw = get_products(context.bot_data['shop_access_token'])
-    context.bot_data['current_chunk'] = 0
+    context.user_data['current_chunk'] = 0
 
     markup, chunks_number = get_menu(products_raw)
 
@@ -31,7 +31,7 @@ def start(update, context):
 def show_menu(update, context):
     products_raw = get_products(context.bot_data['shop_access_token'])
 
-    markup, _ = get_menu(products_raw, context.bot_data['current_chunk'])
+    markup, _ = get_menu(products_raw, context.user_data['current_chunk'])
 
     context.bot.send_message(
         chat_id=update.effective_user.id,
@@ -51,12 +51,12 @@ def handle_menu(update, context):
     if query.data == 'cart':
         return show_cart(update, context)
     elif query.data == '➡️':
-        if context.bot_data['current_chunk']+1 != context.bot_data['chunks_number']:
-            context.bot_data['current_chunk'] += 1
+        if context.user_data['current_chunk']+1 != context.bot_data['chunks_number']:
+            context.user_data['current_chunk'] += 1
             return show_menu(update, context)
     elif query.data == '⬅️':
-        if context.bot_data['current_chunk'] != 0:
-            context.bot_data['current_chunk'] -= 1
+        if context.user_data['current_chunk'] != 0:
+            context.user_data['current_chunk'] -= 1
             return show_menu(update, context)
     else:
         context.user_data['product_id'] = query.data
