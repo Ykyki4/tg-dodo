@@ -2,6 +2,7 @@ import os
 import pathlib
 from urllib.parse import urlsplit, unquote
 
+from environs import Env
 import requests
 
 
@@ -158,3 +159,41 @@ def add_client_entry(access_token, client_id, lon, lat):
     response = requests.post(f'https://api.moltin.com/v2/flows/clients/entries',
                              headers=headers, json=json_data)
     response.raise_for_status()
+
+
+def get_photo_url(token, photo_id):
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+    }
+
+    response = requests.get(f'https://api.moltin.com/v2/files/{img_id}', headers=headers)
+    response.raise_for_status()
+
+    img_url = response.json()['data']['link']['href']
+
+    return img_url
+
+
+def get_categories(token):
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+    }
+
+    response = requests.get(f'https://api.moltin.com/v2/categories', headers=headers)
+    response.raise_for_status()
+
+    return response.json()['data']
+
+
+if __name__ == '__main__':
+    env = Env()
+    env.read_env()
+
+    access_token, _ = get_access_token(env('SHOP_CLIENT_ID'), env('SHOP_CLIENT_SECRET'))
+
+    categories = get_categories(access_token)
+
+    for category in categories:
+        print(category['name'], category['id'])
