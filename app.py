@@ -123,33 +123,65 @@ def handle_start(sender_id, message_text):
                 "payload": {
                     "template_type":"generic",
                     "elements": menu_elements
+                }
             }
         }
-    }
-})
+    })
 
     response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
-    print(response.json())
+
     response.raise_for_status()
 
-    return ""
+    return "HANDLE_MENU"
+
+
+def handle_menu(sender_id, message_text):
+    params = {"access_token": env("PAGE_ACCESS_TOKEN")}
+    headers = {"Content-Type": "application/json"}
+
+    menu_elements = get_menu(message_text)
+
+    request_content = json.dumps({
+        "recipient": {
+            "id": sender_id
+        },
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type":"generic",
+                    "elements": menu_elements
+                }
+            }
+        }
+    })
+
+    response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
+
+    response.raise_for_status()
+
+    return "HANDLE_MENU"
+
 
 
 def handle_users_reply(sender_id, message_text):
     DATABASE = get_database_connection()
     states_functions = {
         "START": handle_start,
+        "HANDLE_MENU": handle_menu,
     }
     recorded_state = DATABASE.get(f"facebookid_{sender_id}")
+
     if not recorded_state or recorded_state.decode("utf-8") not in states_functions.keys():
         user_state = "START"
     else:
         user_state = recorded_state.decode("utf-8")
     if message_text == "/start":
         user_state = "START"
+
     state_handler = states_functions[user_state]
     next_state = state_handler(sender_id, message_text)
-    DATABASE.set(sender_id, next_state)
+    DATABASE.set(f"facebookid_{sender_id}", next_state)
 
 
 @app.route('/', methods=['POST'])
@@ -163,6 +195,11 @@ def webhook():
                     recipient_id = messaging_event["recipient"]["id"]  
                     message_text = messaging_event["message"]["text"]  
                     handle_users_reply(sender_id, message_text)
+                if messaging_event.get("postback"):
+                    sender_id = messaging_event["sender"]["id"]        
+                    recipient_id = messaging_event["recipient"]["id"]  
+                    message_text = messaging_event["postback"]["payload"]
+                    handle_users_reply(sender_id, message_text)  
     return "ok", 200
 
 
