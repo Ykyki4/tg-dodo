@@ -5,6 +5,7 @@ from datetime import datetime
 
 from environs import Env
 import requests
+import redis
 from flask import Flask, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -15,6 +16,8 @@ env = Env()
 env.read_env()
 
 app = Flask(__name__)
+
+DATABASE = None
 
 SHOP_ACCESS_TOKEN, access_token_expires = get_access_token(env("SHOP_CLIENT_ID"), env("SHOP_CLIENT_SECRET"))
 
@@ -38,22 +41,8 @@ def verify():
     return "Hello world", 200
 
 
-@app.route('/', methods=['POST'])
-def webhook():
-    data = request.get_json()
-    if data["object"] == "page":
-        for entry in data["entry"]:
-            for messaging_event in entry["messaging"]:
-                if messaging_event.get("message"):  # someone sent us a message
-                    sender_id = messaging_event["sender"]["id"]        # the facebook ID of the person sending you the message
-                    recipient_id = messaging_event["recipient"]["id"]  # the recipient's ID, which should be your page's facebook ID
-                    message_text = messaging_event["message"]["text"]  # the message's text
-                    send_message(sender_id, message_text)
-    return "ok", 200
-
-
-def get_menu(requested_category):
-    products = get_products_by_category_id(SHOP_ACCESS_TOKEN, env(requested_category.upper()))
+def get_menu(requested_category_id):
+    products = get_products_by_category_id(SHOP_ACCESS_TOKEN, requested_category_id)
 
     params = {"access_token": env("PAGE_ACCESS_TOKEN")}
     headers = {"Content-Type": "application/json"}
@@ -87,13 +76,13 @@ def get_menu(requested_category):
         menu_elements.append(
                             {
                             "title": f"{product['name']} ({product['price'][0]['amount']} р.)",
-                            "image_url": get_photo_url(SHOP_ACCESS_TOKEN, product['relationships']['main_image']['data']['id']),
-                            "subtitle": product['description'],
+                            "image_url": get_photo_url(SHOP_ACCESS_TOKEN, product["relationships"]["main_image"]["data"]["id"]),
+                            "subtitle": product["description"],
                             "buttons": [
                                 {
                                 "type": "postback",
                                 "title": "Добавить в корзину",
-                                "payload": product['id'],
+                                "payload": product["id"],
                                 }
                             ] 
                     }
@@ -101,36 +90,32 @@ def get_menu(requested_category):
 
     categories = get_categories(SHOP_ACCESS_TOKEN)
 
-    categories_buttons = [
-                            {
-                            "type": "postback",
-                            "title": category['name'],
-                            "payload": category['slug'],
-                            } for category in categories if category['slug'] != requested_category
-                        ]
-
-    print(categories_buttons)
-
     menu_elements.append(
                         {
                         "title": "Не нашли пиццу по вкусу?",
                         "image_url": "https://primepizza.ru/uploads/position/large_0c07c6fd5c4dcadddaf4a2f1a2c218760b20c396.jpg",
                         "subtitle": "У нас есть много разных пицц, выберите категорию.",
-                        "buttons": categories_buttons
+                        "buttons": [
+                            {
+                            "type": "postback",
+                            "title": category["name"],
+                            "payload": category["id"],
+                            } for category in categories if category["id"] != requested_category_id
+                        ]
                     }
                 )
     return menu_elements
 
 
-def send_message(recipient_id, message_text):
+def handle_start(sender_id, message_text):
     params = {"access_token": env("PAGE_ACCESS_TOKEN")}
     headers = {"Content-Type": "application/json"}
 
-    menu_elements = get_menu('front_page')
+    menu_elements = get_menu(env('FRONT_PAGE_CATEGORY_ID'))
 
     request_content = json.dumps({
         "recipient": {
-            "id": recipient_id
+            "id": sender_id
         },
         "message": {
             "attachment": {
@@ -146,6 +131,49 @@ def send_message(recipient_id, message_text):
     response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
     print(response.json())
     response.raise_for_status()
+
+    return ""
+
+
+def handle_users_reply(sender_id, message_text):
+    DATABASE = get_database_connection()
+    states_functions = {
+        "START": handle_start,
+    }
+    recorded_state = DATABASE.get(f"facebookid_{sender_id}")
+    if not recorded_state or recorded_state.decode("utf-8") not in states_functions.keys():
+        user_state = "START"
+    else:
+        user_state = recorded_state.decode("utf-8")
+    if message_text == "/start":
+        user_state = "START"
+    state_handler = states_functions[user_state]
+    next_state = state_handler(sender_id, message_text)
+    DATABASE.set(sender_id, next_state)
+
+
+@app.route('/', methods=['POST'])
+def webhook():
+    data = request.get_json()
+    if data["object"] == "page":
+        for entry in data["entry"]:
+            for messaging_event in entry["messaging"]:
+                if messaging_event.get("message"):  
+                    sender_id = messaging_event["sender"]["id"]        
+                    recipient_id = messaging_event["recipient"]["id"]  
+                    message_text = messaging_event["message"]["text"]  
+                    handle_users_reply(sender_id, message_text)
+    return "ok", 200
+
+
+def get_database_connection():
+    global DATABASE
+    if DATABASE is None:
+        database_password = env('DATABASE_PASSWORD')
+        database_host = env('DATABASE_HOST')
+        database_port = env('DATABASE_PORT')
+        DATABASE = redis.Redis(host=database_host, port=database_port, password=database_password)
+    return DATABASE
 
 
 if __name__ == '__main__':
