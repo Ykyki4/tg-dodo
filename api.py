@@ -161,7 +161,7 @@ def add_client_entry(access_token, client_id, lon, lat):
     response.raise_for_status()
 
 
-def get_photo_url(token, photo_id):
+def get_photo_url(token, img_id):
     headers = {
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json',
@@ -175,10 +175,21 @@ def get_photo_url(token, photo_id):
     return img_url
 
 
-def get_categories(token):
+def get_products_by_category_id(token, category_id):
     headers = {
         'Authorization': f'Bearer {token}',
         'Content-Type': 'application/json',
+    }
+
+    response = requests.get(f'https://api.moltin.com/v2/products?filter=eq(category.id,{category_id})', headers=headers)
+    response.raise_for_status()
+
+    return response.json()['data']
+
+
+def get_categories(token):
+    headers = {
+        'Authorization': f'Bearer {token}',
     }
 
     response = requests.get(f'https://api.moltin.com/v2/categories', headers=headers)
@@ -191,9 +202,11 @@ if __name__ == '__main__':
     env = Env()
     env.read_env()
 
+    spicy='7c58040c-0401-4923-9e8a-11f4a0f0db21'
+    hearty='df1d77b6-acdc-403b-adc1-1dd992ffac8e'
+    special='c3e62488-b596-4cf8-93b3-911761f3c6aa'
+    front_page='00043ad5-359b-4cbc-88a4-bad99f650b4d'
+
     access_token, _ = get_access_token(env('SHOP_CLIENT_ID'), env('SHOP_CLIENT_SECRET'))
 
-    categories = get_categories(access_token)
-
-    for category in categories:
-        print(category['name'], category['id'])
+    print(get_products_by_category_id(access_token, spicy))

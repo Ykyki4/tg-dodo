@@ -8,7 +8,7 @@ import requests
 from flask import Flask, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from api import get_access_token, get_products, download_photo
+from api import get_access_token, get_products, get_photo_url, get_products_by_category_id, get_categories
 
 
 env = Env()
@@ -52,8 +52,8 @@ def webhook():
     return "ok", 200
 
 
-def send_message(recipient_id, message_text):
-    products = get_products(SHOP_ACCESS_TOKEN)
+def get_menu(requested_category):
+    products = get_products_by_category_id(SHOP_ACCESS_TOKEN, env(requested_category.upper()))
 
     params = {"access_token": env("PAGE_ACCESS_TOKEN")}
     headers = {"Content-Type": "application/json"}
@@ -83,21 +83,50 @@ def send_message(recipient_id, message_text):
                     },
                 ]
 
-    for product in products[:5]:
+    for product in products:
         menu_elements.append(
                             {
                             "title": f"{product['name']} ({product['price'][0]['amount']} р.)",
-                            "image_url": download_photo(SHOP_ACCESS_TOKEN, product['relationships']['main_image']['data']['id']),
+                            "image_url": get_photo_url(SHOP_ACCESS_TOKEN, product['relationships']['main_image']['data']['id']),
                             "subtitle": product['description'],
                             "buttons": [
                                 {
-                                "type":"postback",
-                                "title":"Добавить в корзину",
+                                "type": "postback",
+                                "title": "Добавить в корзину",
                                 "payload": product['id'],
                                 }
                             ] 
                     }
                 )
+
+    categories = get_categories(SHOP_ACCESS_TOKEN)
+
+    categories_buttons = [
+                            {
+                            "type": "postback",
+                            "title": category['name'],
+                            "payload": category['slug'],
+                            } for category in categories if category['slug'] != requested_category
+                        ]
+
+    print(categories_buttons)
+
+    menu_elements.append(
+                        {
+                        "title": "Не нашли пиццу по вкусу?",
+                        "image_url": "https://primepizza.ru/uploads/position/large_0c07c6fd5c4dcadddaf4a2f1a2c218760b20c396.jpg",
+                        "subtitle": "У нас есть много разных пицц, выберите категорию.",
+                        "buttons": categories_buttons
+                    }
+                )
+    return menu_elements
+
+
+def send_message(recipient_id, message_text):
+    params = {"access_token": env("PAGE_ACCESS_TOKEN")}
+    headers = {"Content-Type": "application/json"}
+
+    menu_elements = get_menu('front_page')
 
     request_content = json.dumps({
         "recipient": {
@@ -113,6 +142,7 @@ def send_message(recipient_id, message_text):
         }
     }
 })
+
     response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
     print(response.json())
     response.raise_for_status()
