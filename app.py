@@ -10,7 +10,7 @@ from flask import Flask, request
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from api import get_access_token, get_products, get_photo_url, get_products_by_category_id, get_categories, get_cart, \
-                add_product_to_cart
+                add_product_to_cart, delete_from_cart
 
 
 env = Env()
@@ -112,6 +112,31 @@ def get_menu(requested_category_id):
     return menu_elements
 
 
+def send_menu(sender_id, message_text, params, headers):
+    menu_elements = get_menu(message_text)
+
+    request_content = json.dumps({
+        "recipient": {
+            "id": sender_id
+        },
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type":"generic",
+                    "elements": menu_elements
+                }
+            }
+        }
+    })
+
+    response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
+    print(response.json())
+    response.raise_for_status()
+
+    return "HANDLE_MENU"
+
+
 def get_cart_menu(sender_id, message_text):
     cart_response, items_response = get_cart(SHOP_ACCESS_TOKEN, f"facebookid_{sender_id}")
 
@@ -145,19 +170,49 @@ def get_cart_menu(sender_id, message_text):
                 {
                 "title": item['name'],
                 "image_url": item["image"]["href"],
-                "subtitle": f"{item['quantity']}шт. в корзине за {item['meta']['display_price']['with_tax']['value']['formatted']}" \
+                "subtitle": f"{item['quantity']}шт. в корзине за {item['meta']['display_price']['with_tax']['value']['formatted']}р. " \
                             f"Состав: {item['description']}",
                 "buttons": [
                         {
                         "type": "postback",
+                        "title": "Добавить ещё одну",
+                        "payload": f"to_cart {item['product_id']}",
+                        },
+                        {
+                        "type": "postback",
                         "title": "Убрать из корзины",
-                        "payload": item['id'],
+                        "payload": f"from_cart {item['id']}",
                         },
                     ]
                 }
             )
 
     return elements
+
+
+def send_cart_menu(sender_id, message_text, params, headers):
+    elements = get_cart_menu(sender_id, message_text)
+
+    request_content = json.dumps({
+        "recipient": {
+            "id": sender_id
+        },
+        "message": {
+            "attachment": {
+                "type": "template",
+                "payload": {
+                    "template_type":"generic",
+                    "elements": elements
+                }
+            }
+        }
+    })
+
+    response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
+    print(response.json())
+    response.raise_for_status()
+
+    return "HANDLE_MENU"
 
 
 def handle_start(sender_id, message_text):
@@ -193,29 +248,7 @@ def handle_menu(sender_id, message_text):
     headers = {"Content-Type": "application/json"}
 
     if message_text == "cart":
-
-        elements = get_cart_menu(sender_id, message_text)
-
-        request_content = json.dumps({
-            "recipient": {
-                "id": sender_id
-            },
-            "message": {
-                "attachment": {
-                    "type": "template",
-                    "payload": {
-                        "template_type":"generic",
-                        "elements": elements
-                    }
-                }
-            }
-        })
-
-        response = requests.post("https://graph.facebook.com/v2.6/me/messages", params=params, headers=headers, data=request_content)
-        print(response.json())
-        response.raise_for_status()
-
-        return "HANDLE_CART"
+        return send_cart_menu(sender_id, message_text, params, headers)
 
     elif "to_cart" in message_text:
         product_id = message_text.split(" ")[1]
@@ -227,7 +260,7 @@ def handle_menu(sender_id, message_text):
                 "id": sender_id
             },
             "message": {
-                "text": f"В корзину была добавлена {response['data'][0]['name']}"
+                "text": f"Продукт был добавлен в корзину."
             }
         })
 
@@ -235,24 +268,19 @@ def handle_menu(sender_id, message_text):
         print(response.json())
         response.raise_for_status()
 
-        return "HANDLE_MENU"
+        return send_cart_menu(sender_id, message_text, params, headers)
 
+    elif "from_cart" in message_text:
+        product_id = message_text.split(" ")[1]
 
-    else:
-        menu_elements = get_menu(message_text)
+        response = delete_from_cart(SHOP_ACCESS_TOKEN, f"facebookid_{sender_id}", product_id)
 
         request_content = json.dumps({
             "recipient": {
                 "id": sender_id
             },
             "message": {
-                "attachment": {
-                    "type": "template",
-                    "payload": {
-                        "template_type":"generic",
-                        "elements": menu_elements
-                    }
-                }
+                "text": f"Продукт был убран из корзины."
             }
         })
 
@@ -260,8 +288,13 @@ def handle_menu(sender_id, message_text):
         print(response.json())
         response.raise_for_status()
 
-        return "HANDLE_MENU"
+        return send_cart_menu(sender_id, message_text, params, headers)
 
+    elif message_text == "menu":
+        return send_menu(sender_id, message_text, params, headers)
+
+    else:
+        return send_menu(sender_id, message_text, params, headers)
 
 
 def handle_users_reply(sender_id, message_text):
