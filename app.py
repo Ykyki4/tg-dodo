@@ -25,8 +25,8 @@ SHOP_ACCESS_TOKEN, access_token_expires = get_access_token(env("SHOP_CLIENT_ID")
 scheduler = BackgroundScheduler()
 
 def regenerate_token():
-    shop_access_token, _ = get_access_token(env("SHOP_CLIENT_ID"), env("SHOP_CLIENT_SECRET"))
-    os.environ['SHOP_ACCESS_TOKEN'] = shop_access_token
+    global SHOP_ACCESS_TOKEN
+    SHOP_ACCESS_TOKEN, _ = get_access_token(env("SHOP_CLIENT_ID"), env("SHOP_CLIENT_SECRET"))
 
 scheduler.add_job(func=regenerate_token, trigger="interval", seconds=access_token_expires)
 scheduler.start()
