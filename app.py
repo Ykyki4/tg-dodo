@@ -271,10 +271,7 @@ def handle_menu(sender_id, message_text):
         response.raise_for_status()
 
         return send_cart_menu(sender_id, message_text, params, headers)
-
-    elif message_text == "menu":
-        return send_menu(sender_id, message_text, params, headers)
-
+        
     else:
         return send_menu(sender_id, message_text, params, headers)
 
