@@ -45,11 +45,13 @@ def verify():
 def get_menu(sender_id, requested_category_id):
     products = get_products_by_category_id(SHOP_ACCESS_TOKEN, requested_category_id)
 
+    db = get_database_connection()
+
     if not products:
         products = get_products_by_category_id(SHOP_ACCESS_TOKEN, env("FRONT_PAGE_CATEGORY_ID"))
         requested_category_id = env("FRONT_PAGE_CATEGORY_ID")
 
-    request_content = DATABASE.get(requested_category_id)
+    request_content = db.get(requested_category_id)
 
     if not request_content:
         menu_elements = [
@@ -123,7 +125,7 @@ def get_menu(sender_id, requested_category_id):
                 }
             }   
         })
-        DATABASE.set(requested_category_id, request_content)
+        db.set(requested_category_id, request_content)
 
     return request_content
 
@@ -271,7 +273,7 @@ def handle_menu(sender_id, message_text):
         response.raise_for_status()
 
         return send_cart_menu(sender_id, message_text, params, headers)
-        
+
     else:
         return send_menu(sender_id, message_text, params, headers)
 
