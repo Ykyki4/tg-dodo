@@ -2,9 +2,15 @@
  
 # fish-shop
  
-Чатбот в мессенджере телеграм для продажи пицц с помощью сервиса [Elastic Path](https://elasticpath.com)
+Чатбот в мессенджере телеграм и фэйсбук для продажи пицц с помощью сервиса [Elastic Path](https://elasticpath.com)
+
+Телеграм:
 
 [@DoDoPizza](https://t.me/dvmn_verbs_game_support_bot)
+
+Фэйсбук:
+
+[DoDo-Pizza](https://www.facebook.com/messages/t/103610002611169/)
 
 Пример работы:
 
@@ -28,6 +34,14 @@ pip install -r requirements.txt
 * DB_HOST
 * DB_PASSWORD
 * DB_PORT
+
+Если хотите запустить бота в фэйсбуке, вам также нужно определить данные переменные:
+
+* PAGE_ACCESS_TOKEN - маркер доступа от вашей страницы.
+* VERIFY_TOKEN - ключ верификации вебхука, должен быть такой же, какой вы указали при регистрации вебхука.
+* FRONT_PAGE_CATEGORY_ID - айди категории которая должна высвечиваться первой. Можно получить и установить в [Elastic Path](https://elasticpath.com).
+
+Также, вам нужно следовать данному [гайду](https://dvmn.org/encyclopedia/api-docs/how-to-get-facebook-api/)
 
 Для получения данных о вашей базе данных, зайдите на [сайт](https://redis.com/), и создайте там новую базу данных.
 
