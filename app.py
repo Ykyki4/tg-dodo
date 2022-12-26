@@ -280,12 +280,12 @@ def handle_menu(sender_id, message_text):
 
 
 def handle_users_reply(sender_id, message_text):
-    DATABASE = get_database_connection()
+    db = get_database_connection()
     states_functions = {
         "START": handle_start,
         "HANDLE_MENU": handle_menu,
     }
-    recorded_state = DATABASE.get(f"facebookid_{sender_id}")
+    recorded_state = db.get(f"facebookid_{sender_id}")
 
     if not recorded_state or recorded_state.decode("utf-8") not in states_functions.keys():
         user_state = "START"
@@ -296,7 +296,7 @@ def handle_users_reply(sender_id, message_text):
 
     state_handler = states_functions[user_state]
     next_state = state_handler(sender_id, message_text)
-    DATABASE.set(f"facebookid_{sender_id}", next_state)
+    db.set(f"facebookid_{sender_id}", next_state)
 
 
 @app.route('/', methods=['POST'])
